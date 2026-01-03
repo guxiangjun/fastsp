@@ -1,0 +1,8 @@
+[http]
+proxy = "127.0.0.1:10808"
+
+[https]
+proxy = "127.0.0.1:10808"
+
+[net]
+git-fetch-with-cli = true
