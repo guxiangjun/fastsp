@@ -231,5 +231,31 @@ impl AudioService {
             Err(anyhow::anyhow!("Audio stream not initialized"))
         }
     }
+
+    /// Start audio level test - just plays the stream without recording to buffer
+    pub fn start_test(&self) -> Result<()> {
+        if let Some(ref stream) = self.stream {
+            self.is_recording.store(true, Ordering::Relaxed);
+            stream.play()?;
+            Ok(())
+        } else {
+            Err(anyhow::anyhow!("Audio stream not initialized"))
+        }
+    }
+
+    /// Stop audio level test
+    pub fn stop_test(&self) -> Result<()> {
+        if let Some(ref stream) = self.stream {
+            stream.pause()?;
+            self.is_recording.store(false, Ordering::Relaxed);
+            // Clear any recorded buffer
+            if let Ok(mut buffer) = self.buffer.lock() {
+                buffer.clear();
+            }
+            Ok(())
+        } else {
+            Err(anyhow::anyhow!("Audio stream not initialized"))
+        }
+    }
 }
 

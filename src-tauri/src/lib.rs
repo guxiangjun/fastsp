@@ -176,10 +176,12 @@ async fn download_model<R: Runtime>(app: AppHandle<R>, state: tauri::State<'_, S
 async fn download_model_for_version<R: Runtime>(
     app: AppHandle<R>, 
     state: tauri::State<'_, StorageState>,
+    asr: tauri::State<'_, AsrState>,
     version: String
 ) -> Result<(), String> {
     let config = state.load_config();
     let model_dir = config.model_dir.clone();
+    let language = config.language.clone();
     let model_version = match version.as_str() {
         "quantized" => ModelVersion::Quantized,
         "unquantized" => ModelVersion::Unquantized,
@@ -188,6 +190,8 @@ async fn download_model_for_version<R: Runtime>(
     
     let handle = app.clone();
     let version_for_download = model_version.clone();
+    let asr_clone = asr.inner().clone();
+    
     tauri::async_runtime::spawn(async move {
         let progress_handle = handle.clone();
         let res = model_manager::download_model_version(&model_dir, &version_for_download, move |current, total| {
@@ -197,7 +201,23 @@ async fn download_model_for_version<R: Runtime>(
         if let Err(e) = res {
              handle.emit("download_error", e.to_string()).ok();
         } else {
+             // Download complete - now auto-load the model
              handle.emit("download_complete", ()).ok();
+             
+             // Update config to use this version (get state from handle)
+             let storage = handle.state::<StorageState>();
+             let mut new_config = storage.load_config();
+             new_config.model_version = version_for_download.clone();
+             let _ = storage.save_config(&new_config);
+             
+             // Load the model
+             let model_path = model_manager::get_model_dir_for_version(&model_dir, &version_for_download);
+             match asr_clone.load_model(model_path, language) {
+                 Ok(_) => {
+                     handle.emit("model_loaded", ()).ok();
+                 },
+                 Err(e) => eprintln!("Failed to auto-load model after download: {}", e),
+             }
         }
     });
     
@@ -280,6 +300,23 @@ fn switch_input_device<R: Runtime>(
     Ok(())
 }
 
+#[tauri::command]
+fn start_audio_test(audio: tauri::State<AudioState>) -> Result<(), String> {
+    if let Ok(audio) = audio.lock() {
+        audio.start_test().map_err(|e| e.to_string())
+    } else {
+        Err("Failed to lock audio service".to_string())
+    }
+}
+
+#[tauri::command]
+fn stop_audio_test(audio: tauri::State<AudioState>) -> Result<(), String> {
+    if let Ok(audio) = audio.lock() {
+        audio.stop_test().map_err(|e| e.to_string())
+    } else {
+        Err("Failed to lock audio service".to_string())
+    }
+}
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -481,7 +518,8 @@ pub fn run() {
             check_model_status, download_model, open_model_folder,
             get_model_versions_status, get_model_detailed_status,
             download_model_for_version, switch_model_version,
-            get_input_devices, get_current_input_device, switch_input_device
+            get_input_devices, get_current_input_device, switch_input_device,
+            start_audio_test, stop_audio_test
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

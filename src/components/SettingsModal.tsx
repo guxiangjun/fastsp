@@ -19,6 +19,10 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     const [switchingDevice, setSwitchingDevice] = useState(false);
     const [switchingModel, setSwitchingModel] = useState(false);
 
+    // Audio test state
+    const [isTesting, setIsTesting] = useState(false);
+    const [audioLevel, setAudioLevel] = useState(0);
+
     useEffect(() => {
         if (isOpen) {
             api.getConfig().then(setConfig);
@@ -48,6 +52,12 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     };
 
     const handleSwitchDevice = async (deviceName: string) => {
+        // Stop test if running when switching devices
+        if (isTesting) {
+            await api.stopAudioTest();
+            setIsTesting(false);
+            setAudioLevel(0);
+        }
         setSwitchingDevice(true);
         try {
             await api.switchInputDevice(deviceName);
@@ -57,6 +67,36 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
             setSwitchingDevice(false);
         }
     };
+
+    const toggleAudioTest = async () => {
+        if (isTesting) {
+            await api.stopAudioTest();
+            setIsTesting(false);
+            setAudioLevel(0);
+        } else {
+            await api.startAudioTest();
+            setIsTesting(true);
+        }
+    };
+
+    // Audio level listener
+    useEffect(() => {
+        if (!isTesting) return;
+        const unsub = events.onAudioLevel((level) => {
+            // Clamp and scale level for visual display (0-1 range)
+            setAudioLevel(Math.min(1, level * 5));
+        });
+        return () => { unsub.then(f => f()); };
+    }, [isTesting]);
+
+    // Stop test when modal closes
+    useEffect(() => {
+        if (!isOpen && isTesting) {
+            api.stopAudioTest();
+            setIsTesting(false);
+            setAudioLevel(0);
+        }
+    }, [isOpen, isTesting]);
 
     const handleModelAction = async (version: ModelVersion) => {
         if (!versionsStatus) return;
@@ -141,27 +181,51 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                                 </select>
                             </div>
 
-                            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-col md:flex-row gap-4 items-center justify-between">
-                                <div className="flex items-center gap-3 w-full md:w-auto">
-                                    <Mic className="w-5 h-5 text-slate-400" />
-                                    <div>
-                                        <div className="font-medium text-slate-800">Input Device</div>
-                                        <div className="text-xs text-slate-500">Current microphone</div>
+                            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+                                <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
+                                    <div className="flex items-center gap-3 w-full md:w-auto">
+                                        <Mic className="w-5 h-5 text-slate-400" />
+                                        <div>
+                                            <div className="font-medium text-slate-800">Input Device</div>
+                                            <div className="text-xs text-slate-500">Current microphone</div>
+                                        </div>
+                                    </div>
+                                    <div className="flex items-center gap-2 w-full md:w-auto">
+                                        {switchingDevice && <Loader2 className="w-4 h-4 animate-spin text-chinese-indigo" />}
+                                        <select
+                                            className="flex-1 md:w-48 bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 focus:ring-2 focus:ring-chinese-indigo outline-none disabled:opacity-50"
+                                            value={currentDevice}
+                                            onChange={(e) => handleSwitchDevice(e.target.value)}
+                                            disabled={switchingDevice || isTesting}
+                                        >
+                                            {inputDevices.map(d => (
+                                                <option key={d.name} value={d.name}>{d.name} {d.is_default ? "(Default)" : ""}</option>
+                                            ))}
+                                        </select>
+                                        <button
+                                            onClick={toggleAudioTest}
+                                            className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${isTesting
+                                                ? "bg-chinese-indigo text-white"
+                                                : "bg-white border border-slate-200 text-slate-600 hover:border-chinese-indigo hover:text-chinese-indigo"
+                                                }`}
+                                            disabled={switchingDevice}
+                                        >
+                                            {isTesting ? "Stop" : "Test"}
+                                        </button>
                                     </div>
                                 </div>
-                                <div className="flex items-center gap-2 w-full md:w-auto">
-                                    {switchingDevice && <Loader2 className="w-4 h-4 animate-spin text-chinese-indigo" />}
-                                    <select
-                                        className="w-full md:w-64 bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 focus:ring-2 focus:ring-chinese-indigo outline-none disabled:opacity-50"
-                                        value={currentDevice}
-                                        onChange={(e) => handleSwitchDevice(e.target.value)}
-                                        disabled={switchingDevice}
-                                    >
-                                        {inputDevices.map(d => (
-                                            <option key={d.name} value={d.name}>{d.name} {d.is_default ? "(Default)" : ""}</option>
-                                        ))}
-                                    </select>
-                                </div>
+                                {/* Volume Bar */}
+                                {isTesting && (
+                                    <div className="flex items-center gap-3">
+                                        <div className="text-xs text-slate-500 w-12">Level:</div>
+                                        <div className="flex-1 h-2 bg-slate-200 rounded-full overflow-hidden">
+                                            <div
+                                                className="h-full bg-gradient-to-r from-green-400 via-yellow-400 to-red-500 transition-all duration-75"
+                                                style={{ width: `${audioLevel * 100}%` }}
+                                            />
+                                        </div>
+                                    </div>
+                                )}
                             </div>
                         </div>
                     </section>
@@ -238,7 +302,7 @@ function ModelCard({ title, size, active, downloaded, downloading, switching, pr
         <button
             onClick={onClick}
             disabled={downloading || switching}
-            className={`relative p-4 rounded-xl text-left transition-all duration-200 overflow-hidden ${active
+            className={`relative p-4 rounded-xl text-left transition-all duration-200 overflow-hidden outline-none focus:ring-2 focus:ring-chinese-indigo/50 focus:ring-offset-1 ${active
                 ? "bg-chinese-indigo/50 text-white shadow-lg shadow-chinese-indigo/25"
                 : "bg-white hover:bg-slate-200"
                 }`}
@@ -255,7 +319,7 @@ function ModelCard({ title, size, active, downloaded, downloading, switching, pr
             <div className={`text-xs ${active ? "text-white/70" : "text-slate-400"}`}>{size}</div>
 
             {(downloading || switching) && (
-                <div className="absolute inset-0 bg-white/90 backdrop-blur-sm flex flex-col items-center justify-center p-4">
+                <div className="absolute inset-0 bg-white/90 backdrop-blur-sm flex flex-col items-center justify-center p-4 rounded-xl">
                     {downloading ? (
                         <>
                             <div className="w-full flex justify-between text-xs text-chinese-indigo mb-1">

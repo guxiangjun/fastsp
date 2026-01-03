@@ -12,6 +12,7 @@ function App() {
   const [isRecording, setIsRecording] = useState(false);
   const [modelReady, setModelReady] = useState(false);
   const [isModelLoading, setIsModelLoading] = useState(true);
+  const [needsSetup, setNeedsSetup] = useState(false);
 
   useEffect(() => {
     // Check initial status
@@ -20,6 +21,14 @@ function App() {
       // If downloaded but not loaded, it is loading.
       // If not downloaded, it is not loading (waiting for user action).
       setIsModelLoading(status.downloaded && !status.loaded);
+    });
+
+    // Check if input device is configured - if not, force settings open
+    api.getConfig().then(config => {
+      if (!config.input_device || config.input_device === "") {
+        setNeedsSetup(true);
+        setIsSettingsOpen(true);
+      }
     });
 
     const unsubRecording = events.onRecordingStatus(setIsRecording);
@@ -33,6 +42,22 @@ function App() {
       unsubModelLoaded.then(f => f());
     };
   }, []);
+
+  // Handle settings close - check if setup is complete
+  const handleSettingsClose = () => {
+    if (needsSetup) {
+      // Re-check if device is now configured
+      api.getConfig().then(config => {
+        if (config.input_device && config.input_device !== "") {
+          setNeedsSetup(false);
+          setIsSettingsOpen(false);
+        }
+        // If still not configured, keep modal open
+      });
+    } else {
+      setIsSettingsOpen(false);
+    }
+  };
 
   return (
     <div className="flex h-screen w-full bg-white text-slate-800 overflow-hidden selection:bg-chinese-indigo/20">
@@ -75,7 +100,7 @@ function App() {
       </div>
 
       {/* Modals */}
-      <SettingsModal isOpen={isSettingsOpen} onClose={() => setIsSettingsOpen(false)} />
+      <SettingsModal isOpen={isSettingsOpen} onClose={handleSettingsClose} />
     </div>
   );
 }

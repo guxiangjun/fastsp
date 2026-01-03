@@ -52,6 +52,8 @@ export const api = {
     getInputDevices: () => invoke<AudioDevice[]>("get_input_devices"),
     getCurrentInputDevice: () => invoke<string>("get_current_input_device"),
     switchInputDevice: (deviceName: string) => invoke("switch_input_device", { deviceName }),
+    startAudioTest: () => invoke("start_audio_test"),
+    stopAudioTest: () => invoke("stop_audio_test"),
 };
 
 export const events = {
@@ -61,5 +63,6 @@ export const events = {
     onDownloadComplete: (callback: () => void) => listen("download_complete", callback),
     onDownloadError: (callback: (error: string) => void) => listen("download_error", (e) => callback(e.payload as string)),
     onModelLoaded: (callback: () => void) => listen("model_loaded", callback),
+    onAudioLevel: (callback: (level: number) => void) => listen<number>("audio_level", (e) => callback(e.payload)),
 };
 
