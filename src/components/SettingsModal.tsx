@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
-import { FolderOpen, Check, Loader2, Mic, X, Monitor, Keyboard, Languages } from "lucide-react";
-import { api, AppConfig, ModelVersion, ModelVersionsStatus, AudioDevice, events } from "../lib/api";
+import { FolderOpen, Check, Loader2, Mic, X, Monitor, Keyboard, Languages, Sparkles, ChevronDown, ChevronUp } from "lucide-react";
+import { api, AppConfig, ModelVersion, ModelVersionsStatus, AudioDevice, LlmConfig, events } from "../lib/api";
 
 interface SettingsModalProps {
     isOpen: boolean;
@@ -23,12 +23,21 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
     const [isTesting, setIsTesting] = useState(false);
     const [audioLevel, setAudioLevel] = useState(0);
 
+    // LLM state
+    const [llmTesting, setLlmTesting] = useState(false);
+    const [llmTestResult, setLlmTestResult] = useState<{ success: boolean; message: string } | null>(null);
+    const [showPromptEditor, setShowPromptEditor] = useState(false);
+    const [defaultPrompt, setDefaultPrompt] = useState("");
+
     useEffect(() => {
         if (isOpen) {
             api.getConfig().then(setConfig);
             api.getModelVersionsStatus().then(setVersionsStatus);
             api.getInputDevices().then(setInputDevices);
             api.getCurrentInputDevice().then(setCurrentDevice);
+            api.getDefaultLlmPrompt().then(setDefaultPrompt);
+            // Reset LLM test result when opening
+            setLlmTestResult(null);
         }
     }, [isOpen]);
 
@@ -49,6 +58,30 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
         const newConfig = { ...config, [key]: value };
         setConfig(newConfig);
         api.saveConfig(newConfig);
+    };
+
+    const updateLlmConfig = (key: keyof LlmConfig, value: any) => {
+        if (!config) return;
+        const newLlmConfig = { ...config.llm_config, [key]: value };
+        const newConfig = { ...config, llm_config: newLlmConfig };
+        setConfig(newConfig);
+        api.saveConfig(newConfig);
+        // Clear test result when config changes
+        setLlmTestResult(null);
+    };
+
+    const handleTestLlm = async () => {
+        if (!config) return;
+        setLlmTesting(true);
+        setLlmTestResult(null);
+        try {
+            const result = await api.testLlmConnection(config.llm_config);
+            setLlmTestResult({ success: true, message: result });
+        } catch (e: any) {
+            setLlmTestResult({ success: false, message: e.toString() });
+        } finally {
+            setLlmTesting(false);
+        }
     };
 
     const handleSwitchDevice = async (deviceName: string) => {
@@ -259,6 +292,114 @@ export function SettingsModal({ isOpen, onClose }: SettingsModalProps) {
                             <button onClick={api.openModelFolder} className="text-xs text-slate-400 hover:text-chinese-indigo flex items-center gap-1 transition-colors">
                                 <FolderOpen className="w-3 h-3" /> Open Model Folder
                             </button>
+                        </div>
+                    </section>
+
+                    {/* LLM Correction */}
+                    <section>
+                        <SectionHeader icon={Sparkles} title="LLM Correction" />
+                        <div className="space-y-4">
+                            {/* Enable Toggle */}
+                            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                                <div className="flex items-center justify-between">
+                                    <div className="flex items-center gap-3">
+                                        <Sparkles className="w-5 h-5 text-slate-400" />
+                                        <div>
+                                            <div className="font-medium text-slate-800">Enable LLM Correction</div>
+                                            <div className="text-xs text-slate-500">Use AI to fix transcription errors</div>
+                                        </div>
+                                    </div>
+                                    <button
+                                        onClick={() => updateLlmConfig("enabled", !config?.llm_config.enabled)}
+                                        className={`relative w-12 h-6 rounded-full transition-colors ${config?.llm_config.enabled ? "bg-chinese-indigo" : "bg-slate-300"}`}
+                                    >
+                                        <div className={`absolute top-1 w-4 h-4 rounded-full bg-white shadow transition-all ${config?.llm_config.enabled ? "left-7" : "left-1"}`} />
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* LLM Config Fields - Only show when enabled */}
+                            {config?.llm_config.enabled && (
+                                <div className="space-y-3">
+                                    {/* Base URL */}
+                                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                                        <label className="block text-sm font-medium text-slate-700 mb-2">Base URL</label>
+                                        <input
+                                            type="text"
+                                            value={config.llm_config.base_url}
+                                            onChange={(e) => updateLlmConfig("base_url", e.target.value)}
+                                            placeholder="https://api.openai.com/v1"
+                                            className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 focus:ring-2 focus:ring-chinese-indigo outline-none"
+                                        />
+                                    </div>
+
+                                    {/* API Key */}
+                                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                                        <label className="block text-sm font-medium text-slate-700 mb-2">API Key</label>
+                                        <input
+                                            type="password"
+                                            value={config.llm_config.api_key}
+                                            onChange={(e) => updateLlmConfig("api_key", e.target.value)}
+                                            placeholder="sk-..."
+                                            className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 focus:ring-2 focus:ring-chinese-indigo outline-none"
+                                        />
+                                    </div>
+
+                                    {/* Model */}
+                                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                                        <label className="block text-sm font-medium text-slate-700 mb-2">Model</label>
+                                        <input
+                                            type="text"
+                                            value={config.llm_config.model}
+                                            onChange={(e) => updateLlmConfig("model", e.target.value)}
+                                            placeholder="gpt-4o-mini"
+                                            className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 focus:ring-2 focus:ring-chinese-indigo outline-none"
+                                        />
+                                    </div>
+
+                                    {/* Custom Prompt (Collapsible) */}
+                                    <div className="bg-slate-50 p-4 rounded-xl border border-slate-200">
+                                        <button
+                                            onClick={() => setShowPromptEditor(!showPromptEditor)}
+                                            className="w-full flex items-center justify-between text-sm font-medium text-slate-700"
+                                        >
+                                            <span>Custom Prompt</span>
+                                            {showPromptEditor ? <ChevronUp className="w-4 h-4" /> : <ChevronDown className="w-4 h-4" />}
+                                        </button>
+                                        {showPromptEditor && (
+                                            <div className="mt-3 space-y-2">
+                                                <textarea
+                                                    value={config.llm_config.custom_prompt || ""}
+                                                    onChange={(e) => updateLlmConfig("custom_prompt", e.target.value)}
+                                                    placeholder={defaultPrompt}
+                                                    rows={8}
+                                                    className="w-full bg-white border border-slate-200 rounded-lg px-3 py-2 text-sm text-slate-700 focus:ring-2 focus:ring-chinese-indigo outline-none resize-none font-mono"
+                                                />
+                                                <p className="text-xs text-slate-400">
+                                                    Use {"{"}<span>text</span>{"}"} as placeholder for the transcribed text. Leave empty to use default prompt.
+                                                </p>
+                                            </div>
+                                        )}
+                                    </div>
+
+                                    {/* Test Connection Button */}
+                                    <div className="flex items-center gap-3">
+                                        <button
+                                            onClick={handleTestLlm}
+                                            disabled={llmTesting || !config.llm_config.api_key}
+                                            className="px-4 py-2 bg-chinese-indigo text-white rounded-lg text-sm font-medium hover:bg-chinese-indigo/90 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                                        >
+                                            {llmTesting && <Loader2 className="w-4 h-4 animate-spin" />}
+                                            {llmTesting ? "Testing..." : "Test Connection"}
+                                        </button>
+                                        {llmTestResult && (
+                                            <span className={`text-sm ${llmTestResult.success ? "text-green-600" : "text-red-600"}`}>
+                                                {llmTestResult.success ? "Success!" : llmTestResult.message.slice(0, 50)}
+                                            </span>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </section>
                 </div>

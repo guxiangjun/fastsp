@@ -19,6 +19,14 @@ export interface AudioDevice {
     is_default: boolean;
 }
 
+export interface LlmConfig {
+    enabled: boolean;
+    base_url: string;
+    api_key: string;
+    model: string;
+    custom_prompt: string;
+}
+
 export interface AppConfig {
     trigger_mouse: boolean;
     trigger_hold: boolean;
@@ -27,6 +35,7 @@ export interface AppConfig {
     model_dir: string;
     model_version: ModelVersion;
     input_device: string;
+    llm_config: LlmConfig;
 }
 
 export interface HistoryItem {
@@ -54,6 +63,9 @@ export const api = {
     switchInputDevice: (deviceName: string) => invoke("switch_input_device", { deviceName }),
     startAudioTest: () => invoke("start_audio_test"),
     stopAudioTest: () => invoke("stop_audio_test"),
+    // LLM APIs
+    testLlmConnection: (config: LlmConfig) => invoke<string>("test_llm_connection", { config }),
+    getDefaultLlmPrompt: () => invoke<string>("get_default_llm_prompt"),
 };
 
 export const events = {

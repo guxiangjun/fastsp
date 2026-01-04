@@ -1,12 +1,13 @@
 mod asr;
 mod audio;
 mod input_listener;
+mod llm;
 mod model_manager;
 mod storage;
 
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, Runtime};
-use storage::{AppConfig, HistoryItem, ModelVersion};
+use storage::{AppConfig, HistoryItem, LlmConfig, ModelVersion};
 use serde::Serialize;
 
 // Define State Types
@@ -42,6 +43,56 @@ fn save_debug_wav(_samples: &[f32], _sample_rate: u32, _filename: &str) {
 }
 
 use enigo::{Enigo, Keyboard, Settings, Direction, Key}; // Update Enigo imports
+
+/// Process transcribed text: apply LLM correction if enabled, save to history, emit event, paste
+fn process_transcription<R: Runtime>(
+    app_handle: &AppHandle<R>,
+    text: String,
+) {
+    if text.trim().is_empty() {
+        return;
+    }
+
+    let storage = app_handle.state::<StorageState>();
+    let config = storage.load_config();
+    let llm_config = config.llm_config.clone();
+
+    let app_handle_clone = app_handle.clone();
+
+    // Use tokio runtime to handle async LLM correction
+    tauri::async_runtime::spawn(async move {
+        let final_text = if llm_config.enabled && !llm_config.api_key.is_empty() {
+            // Apply LLM correction
+            match llm::correct_text(&text, &llm_config).await {
+                Ok(corrected) => corrected,
+                Err(e) => {
+                    eprintln!("LLM correction failed, using original text: {}", e);
+                    text
+                }
+            }
+        } else {
+            text
+        };
+
+        if final_text.trim().is_empty() {
+            return;
+        }
+
+        let item = HistoryItem {
+            id: uuid::Uuid::new_v4().to_string(),
+            timestamp: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
+            text: final_text.clone(),
+            duration_ms: 0,
+        };
+
+        let storage = app_handle_clone.state::<StorageState>();
+        storage.add_history_item(item.clone()).ok();
+        app_handle_clone.emit("transcription_update", item).ok();
+
+        // Paste text
+        paste_text(&final_text);
+    });
+}
 
 
 
@@ -318,25 +369,39 @@ fn stop_audio_test(audio: tauri::State<AudioState>) -> Result<(), String> {
     }
 }
 
+#[tauri::command]
+async fn test_llm_connection(config: LlmConfig) -> Result<String, String> {
+    llm::test_connection(&config).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+fn get_default_llm_prompt() -> String {
+    storage::DEFAULT_LLM_PROMPT.to_string()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let app_handle = app.handle().clone();
-            
-            // Initialize Storage
+
+            // Initialize Storage (config in AppData\Roaming)
             let app_dir = app.path().app_data_dir().unwrap_or_else(|_| std::path::PathBuf::from("data"));
             let storage_service = storage::StorageService::new(app_dir.clone());
             let mut config = storage_service.load_config();
-            
+
+            // Use AppData\Local for models (less likely to be deleted on uninstall)
+            let local_data_dir = app.path().app_local_data_dir().unwrap_or_else(|_| app_dir.clone());
+
             // Initialize Services
             let asr_service = asr::AsrService::new();
-            
-            // Fix model path to be in AppData if it's the default relative path
+
+            // Fix model path to be in AppData\Local if it's the default relative path
             // This prevents "Rebuilding application" loops during download when running in dev mode
-            if config.model_dir == "./models/sense-voice" {
-                let model_path = app_dir.join("models").join("sense-voice");
+            // and keeps models separate from app data that may be cleaned on uninstall
+            if config.model_dir == "./models/sense-voice" || config.model_dir.contains("AppData\\Roaming") {
+                let model_path = local_data_dir.join("models").join("sense-voice");
                 config.model_dir = model_path.to_string_lossy().to_string();
                 let _ = storage_service.save_config(&config);
                 println!("Updated model directory to: {}", config.model_dir);
@@ -404,7 +469,7 @@ pub fn run() {
                                 // Stop & Transcribe
                                 is_recording = false;
                                 app_handle.emit("recording_status", false).ok();
-                                
+
                                 let audio = app_handle.state::<AudioState>();
                                 let mut buffer = Vec::new();
                                 let mut sample_rate = 48000u32;
@@ -414,29 +479,12 @@ pub fn run() {
                                         buffer = b;
                                     }
                                 }
-                                    // Save debug wav
-                                    // save_debug_wav(&buffer, sample_rate, "fastsp_debug.wav");
 
                                     let asr = app_handle.state::<AsrState>();
                                     // Transcribe with actual sample rate
                                     match asr.transcribe(buffer, sample_rate) {
                                         Ok(text) => {
-                                             if !text.trim().is_empty() {
-                                                 let id = uuid::Uuid::new_v4().to_string();
-                                                 let item = HistoryItem {
-                                                     id: id.clone(),
-                                                     timestamp: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
-                                                     text: text.clone(),
-                                                     duration_ms: 0, // Calculate if needed
-                                                 };
-                                                 
-                                                 let storage = app_handle.state::<StorageState>();
-                                                 storage.add_history_item(item.clone()).ok();
-                                                 app_handle.emit("transcription_update", item).ok();
-                                                 
-                                                 // Paste text
-                                                 paste_text(&text);
-                                             }
+                                            process_transcription(&app_handle, text);
                                         },
                                         Err(e) => eprintln!("Transcription error: {}", e),
                                     }
@@ -444,13 +492,7 @@ pub fn run() {
                         },
                         input_listener::InputEvent::Toggle => {
                             if is_recording {
-                                // Simulate Stop
-                                // Same logic as Stop... can refactor to function?
-                                // For now duplicate logic or use loop with internal event dispatch
-                                // BUT: We need to trigger the Stop logic.
-                                // We can just send a Stop event to ourselves if channel allows? No, sender is moved.
-                                // Just copy paste logic for now or extract function.
-                                // COPY-PASTE STOP LOGIC:
+                                // Stop & Transcribe (same as Stop)
                                 is_recording = false;
                                 app_handle.emit("recording_status", false).ok();
                                 let audio = app_handle.state::<AudioState>();
@@ -462,26 +504,11 @@ pub fn run() {
                                         buffer = b;
                                     }
                                 }
-                                    // Save debug wav
-                                    // save_debug_wav(&buffer, sample_rate, "fastsp_debug_toggle.wav");
 
                                     let asr = app_handle.state::<AsrState>();
                                     match asr.transcribe(buffer, sample_rate) {
                                         Ok(text) => {
-                                             if !text.trim().is_empty() {
-                                                 let item = HistoryItem {
-                                                     id: uuid::Uuid::new_v4().to_string(),
-                                                     timestamp: chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string(),
-                                                     text: text.clone(),
-                                                     duration_ms: 0,
-                                                 };
-                                                 let storage = app_handle.state::<StorageState>();
-                                                 storage.add_history_item(item.clone()).ok();
-                                                 app_handle.emit("transcription_update", item).ok();
-
-                                                 // Paste text
-                                                 paste_text(&text);
-                                             }
+                                            process_transcription(&app_handle, text);
                                         },
                                         Err(e) => eprintln!("Transcribe error: {}", e),
                                     }
@@ -514,12 +541,13 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            get_config, save_config, get_history, clear_history, 
+            get_config, save_config, get_history, clear_history,
             check_model_status, download_model, open_model_folder,
             get_model_versions_status, get_model_detailed_status,
             download_model_for_version, switch_model_version,
             get_input_devices, get_current_input_device, switch_input_device,
-            start_audio_test, stop_audio_test
+            start_audio_test, stop_audio_test,
+            test_llm_connection, get_default_llm_prompt
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

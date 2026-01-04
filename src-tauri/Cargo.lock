@@ -70,32 +70,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a23eb6b1614318a8071c9b2521f36b424b2c83db5eb3a0fead4a6c0809af6e61"
 
 [[package]]
-name = "app"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "arboard",
- "bzip2",
- "chrono",
- "cpal",
- "enigo",
- "futures-util",
- "hound",
- "rdev",
- "reqwest 0.11.27",
- "serde",
- "serde_json",
- "sherpa-rs",
- "tar",
- "tauri",
- "tauri-build",
- "tauri-plugin-opener",
- "thiserror 1.0.69",
- "tokio",
- "uuid",
-]
-
-[[package]]
 name = "arboard"
 version = "3.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1266,6 +1240,32 @@ name = "fastrand"
 version = "2.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "37909eebbb50d72f9059c3b6d82c0463f2ff062c9e95845c43a6c9c0355411be"
+
+[[package]]
+name = "fastsp"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "arboard",
+ "bzip2",
+ "chrono",
+ "cpal",
+ "enigo",
+ "futures-util",
+ "hound",
+ "rdev",
+ "reqwest 0.11.27",
+ "serde",
+ "serde_json",
+ "sherpa-rs",
+ "tar",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-opener",
+ "thiserror 1.0.69",
+ "tokio",
+ "uuid",
+]
 
 [[package]]
 name = "fax"
