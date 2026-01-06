@@ -14,9 +14,11 @@ FastSP 是一个基于 Tauri 的桌面语音转文字应用，使用 SenseVoice 
   - 中文、英文、日语、韩语、粤语
 
 - 🎯 **智能模型管理**
-  - 按需下载模型
+  - 按需下载模型（支持代理）
   - 支持量化版（~230MB）和非量化版（~820MB）
   - 实时切换模型版本
+  - 支持从本地文件导入模型
+  - 可取消下载任务
 
 - 📝 **历史记录**
   - 自动保存转录历史
@@ -27,11 +29,20 @@ FastSP 是一个基于 Tauri 的桌面语音转文字应用，使用 SenseVoice 
   - 支持 OpenAI 兼容 API
   - 自动修正语音识别错误（同音字、语法等）
   - 自定义纠错提示词
+  - 支持代理配置
+  - 连接测试功能
+
+- 🎨 **视觉反馈**
+  - 录音状态指示器（跟随鼠标）
+  - LLM 处理状态指示（红色）
+  - 音频输入测试
 
 - 🔧 **灵活配置**
   - 自定义输入设备
   - 触发模式开关
   - 语言选择
+  - 代理配置（HTTP/SOCKS5）
+  - 模型文件夹管理
 
 ## 🚀 快速开始
 
@@ -65,8 +76,12 @@ npm run tauri build
 
 1. **首次启动**：应用会提示下载 SenseVoice 模型
 2. **选择触发方式**：在设置中启用你喜欢的触发模式
-3. **开始录音**：使用配置的快捷键或鼠标操作开始录音
-4. **自动转录**：录音结束后自动转录并粘贴到光标位置
+3. **配置音频设备**：在设置中选择你的麦克风设备（可选，默认使用系统默认设备）
+4. **开始录音**：使用配置的快捷键或鼠标操作开始录音
+   - 录音时会在鼠标附近显示青色指示器
+   - LLM 处理时会显示红色指示器
+5. **自动转录**：录音结束后自动转录并粘贴到光标位置
+6. **查看历史**：在右侧历史面板查看所有转录记录
 
 ## 🛠️ 技术栈
 
@@ -84,6 +99,8 @@ npm run tauri build
 - cpal (音频捕获)
 - rdev (全局输入监听)
 - enigo (文本注入)
+- reqwest (HTTP 客户端，支持代理)
+- tokio (异步运行时)
 
 ## 📦 项目结构
 
@@ -101,7 +118,8 @@ fastsp/
 │   │   ├── llm.rs         # LLM 纠错服务
 │   │   ├── input_listener.rs  # 输入监听
 │   │   ├── model_manager.rs   # 模型管理
-│   │   └── storage.rs     # 配置存储
+│   │   ├── storage.rs     # 配置存储
+│   │   └── http_client.rs # HTTP 客户端（代理支持）
 │   └── tauri.conf.json    # Tauri 配置
 └── package.json
 ```
@@ -117,6 +135,7 @@ fastsp/
   "trigger_toggle": true,
   "language": "",
   "model_version": "quantized",
+  "model_dir": "C:\\Users\\...\\AppData\\Local\\com.fastsp\\models\\sense-voice",
   "input_device": "",
   "llm_config": {
     "enabled": false,
@@ -124,6 +143,10 @@ fastsp/
     "api_key": "",
     "model": "gpt-4o-mini",
     "custom_prompt": ""
+  },
+  "proxy": {
+    "enabled": false,
+    "url": ""
   }
 }
 ```
@@ -138,7 +161,36 @@ fastsp/
 
 支持任何 OpenAI 兼容的 API（如 OpenAI、DeepSeek、Ollama 等）。
 
+### 代理配置
+
+如果网络环境需要代理，可以在设置中配置：
+
+- **HTTP 代理**：`http://127.0.0.1:7890`
+- **SOCKS5 代理**：`socks5://127.0.0.1:1080`
+
+代理配置会应用于：
+- 模型下载
+- LLM API 请求
+
+### 模型管理
+
+- **下载模型**：支持量化版和非量化版，可随时切换
+- **导入模型**：支持从本地 `.tar.bz2` 文件导入模型
+- **打开模型文件夹**：快速访问模型存储位置
+- **取消下载**：支持取消正在进行的下载任务
+
+### 音频测试
+
+在设置中可以测试音频输入设备，实时查看音频输入电平，确保设备正常工作。
+
 ## 📝 开发说明
+
+### 项目架构
+
+- **状态管理**：使用 Tauri 的 State 管理服务状态，避免状态冗余
+- **异步处理**：使用 Tokio 处理异步任务（下载、LLM 请求）
+- **线程安全**：使用 `Arc<AtomicBool>` 防止并发处理冲突
+- **错误处理**：使用 `anyhow` 和 `thiserror` 进行错误处理
 
 ### 添加新的触发模式
 
@@ -155,6 +207,19 @@ fastsp/
     --color-chinese-indigo: #1661ab;
 }
 ```
+
+### 指示器窗口
+
+应用使用独立的指示器窗口显示录音和 LLM 处理状态：
+- 录音时：青色指示器（`#4f9d9a`）
+- LLM 处理时：红色指示器（`#dc2626`）
+- 指示器会跟随鼠标移动
+
+### 数据存储位置
+
+- **配置文件**：`%APPDATA%\com.fastsp\config.json`
+- **历史记录**：`%APPDATA%\com.fastsp\history.json`
+- **模型文件**：`%LOCALAPPDATA%\com.fastsp\models\sense-voice\`
 
 ## 🤝 贡献
 

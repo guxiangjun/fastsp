@@ -23,9 +23,11 @@ function App() {
       setIsModelLoading(status.downloaded && !status.loaded);
     });
 
-    // Check if input device is configured - if not, force settings open
-    api.getConfig().then(config => {
-      if (!config.input_device || config.input_device === "") {
+    // Check if initial setup is needed (no device or no model downloaded)
+    Promise.all([api.getConfig(), api.getModelVersionsStatus()]).then(([config, versionsStatus]) => {
+      const noDevice = !config.input_device || config.input_device === "";
+      const noModel = !versionsStatus.quantized && !versionsStatus.unquantized;
+      if (noDevice || noModel) {
         setNeedsSetup(true);
         setIsSettingsOpen(true);
       }
@@ -46,13 +48,15 @@ function App() {
   // Handle settings close - check if setup is complete
   const handleSettingsClose = () => {
     if (needsSetup) {
-      // Re-check if device is now configured
-      api.getConfig().then(config => {
-        if (config.input_device && config.input_device !== "") {
+      // Re-check if device and model are now configured
+      Promise.all([api.getConfig(), api.getModelVersionsStatus()]).then(([config, versionsStatus]) => {
+        const hasDevice = config.input_device && config.input_device !== "";
+        const hasModel = versionsStatus.quantized || versionsStatus.unquantized;
+        if (hasDevice && hasModel) {
           setNeedsSetup(false);
           setIsSettingsOpen(false);
         }
-        // If still not configured, keep modal open
+        // If still not configured, keep modal open (SettingsModal handles the warning)
       });
     } else {
       setIsSettingsOpen(false);
@@ -100,7 +104,7 @@ function App() {
       </div>
 
       {/* Modals */}
-      <SettingsModal isOpen={isSettingsOpen} onClose={handleSettingsClose} />
+      <SettingsModal isOpen={isSettingsOpen} onClose={handleSettingsClose} isFirstSetup={needsSetup} />
     </div>
   );
 }

@@ -1,6 +1,7 @@
 use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
-use crate::storage::{LlmConfig, DEFAULT_LLM_PROMPT};
+use crate::storage::{LlmConfig, ProxyConfig, DEFAULT_LLM_PROMPT};
+use crate::http_client::build_client;
 
 #[derive(Serialize)]
 struct ChatMessage {
@@ -63,7 +64,7 @@ fn extract_json(text: &str) -> &str {
 }
 
 /// Correct text using LLM
-pub async fn correct_text(text: &str, config: &LlmConfig) -> Result<String> {
+pub async fn correct_text(text: &str, config: &LlmConfig, proxy: &ProxyConfig) -> Result<String> {
     if !config.enabled || config.api_key.is_empty() {
         return Ok(text.to_string());
     }
@@ -76,9 +77,7 @@ pub async fn correct_text(text: &str, config: &LlmConfig) -> Result<String> {
 
     let prompt = prompt.replace("{text}", text);
 
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
-        .build()?;
+    let client = build_client(proxy, 30)?;
 
     let url = format!("{}/chat/completions", config.base_url.trim_end_matches('/'));
 
@@ -128,14 +127,12 @@ pub async fn correct_text(text: &str, config: &LlmConfig) -> Result<String> {
 }
 
 /// Test LLM connection with a simple request
-pub async fn test_connection(config: &LlmConfig) -> Result<String> {
+pub async fn test_connection(config: &LlmConfig, proxy: &ProxyConfig) -> Result<String> {
     if config.api_key.is_empty() {
         return Err(anyhow!("API Key is empty"));
     }
 
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(10))
-        .build()?;
+    let client = build_client(proxy, 10)?;
 
     let url = format!("{}/chat/completions", config.base_url.trim_end_matches('/'));
 
@@ -154,7 +151,8 @@ pub async fn test_connection(config: &LlmConfig) -> Result<String> {
         .header("Content-Type", "application/json")
         .json(&request)
         .send()
-        .await?;
+        .await
+        .map_err(|e| anyhow!("Connection failed: {}", e))?;
 
     if !response.status().is_success() {
         let status = response.status();

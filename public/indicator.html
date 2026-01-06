@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Indicator</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    html, body {
+      width: 100%;
+      height: 100%;
+      background: transparent;
+      overflow: hidden;
+      -webkit-user-select: none;
+      user-select: none;
+    }
+    #app {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: flex-start;    /* 改为顶部对齐 */
+      justify-content: flex-start; /* 改为左对齐 */
+      background: transparent;
+    }
+    .emoji-container {
+      font-size: 16px; /* 🔧 调整emoji大小，默认28px */
+      line-height: 1;
+      animation: fadeIn 0.3s ease-in-out;
+    }
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+        transform: scale(0.5) rotate(-10deg);
+      }
+      to {
+        opacity: 1;
+        transform: scale(1) rotate(0deg);
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="app">
+    <div class="emoji-container" id="emoji">🎵</div>
+  </div>
+  
+  <script>
+    console.log('Emoji indicator script loaded');
+    
+    // 🔧 配置区域 - 可调整参数
+    const CONFIG = {
+      updateInterval: 500,         // emoji刷新间隔（毫秒），默认800ms
+      fontSize: 16,                // emoji字体大小（像素）
+    };
+    
+    // 根据状态选择不同的emoji池
+    let currentMode = 'recording'; // 'recording' or 'llm'
+    
+    const emojiPools = {
+      recording: [
+        // 人物表情emoji - 录音时显示
+        '😀', '😃', '😄', '😁', '😆', '😊', '😇', '🙂', '🙃', '😉',
+        '😌', '😍', '🥰', '😘', '😗', '😙', '😚', '😋', '😛', '😝',
+        '😜', '🤪', '🤨', '🧐', '🤓', '😎', '🤩', '🥳', '😏', '😒',
+        '🥱', '😐', '😑', '😶', '🤔', '🤗', '🤭', '🤫', '🤥', '😬',
+        '🙄', '😯', '😦', '😧', '😮', '😲', '🥺', '😳', '🥴', '😵'
+      ],
+      llm: [
+        // AI/工具相关emoji - LLM处理时显示
+        '🤖', '⚡', '✨', '🌟', '💫', '🔮', '🧠', '💭', '🎯', '🎨',
+        '🔧', '⚙️', '🛠️', '✏️', '📝', '🔍', '💡', '🚀', '🎪', '🎭'
+      ]
+    };
+    
+    // 应用配置
+    const emojiElement = document.getElementById('emoji');
+    const container = document.querySelector('.emoji-container');
+    container.style.fontSize = `${CONFIG.fontSize}px`;
+    
+    let updateTimer = null;
+    
+    function getRandomEmoji(pool) {
+      return pool[Math.floor(Math.random() * pool.length)];
+    }
+    
+    function updateEmoji() {
+      const pool = emojiPools[currentMode];
+      const newEmoji = getRandomEmoji(pool);
+      
+      // 重新触发动画
+      emojiElement.style.animation = 'none';
+      setTimeout(() => {
+        emojiElement.textContent = newEmoji;
+        emojiElement.style.animation = 'fadeIn 0.3s ease-in-out';
+      }, 10);
+    }
+    
+    function startEmojiUpdate() {
+      // 清除旧的定时器（如果存在）
+      if (updateTimer) {
+        clearInterval(updateTimer);
+      }
+      
+      // 立即更新一次
+      updateEmoji();
+      
+      // 定期更新
+      updateTimer = setInterval(updateEmoji, CONFIG.updateInterval);
+    }
+    
+    function stopEmojiUpdate() {
+      if (updateTimer) {
+        clearInterval(updateTimer);
+        updateTimer = null;
+      }
+    }
+    
+    // 监听Tauri事件来改变模式（录音 vs LLM处理）
+    if (window.__TAURI__ && window.__TAURI__.event) {
+      window.__TAURI__.event.listen('indicator_color', (event) => {
+        console.log('Color change event received:', event.payload);
+        const color = event.payload;
+        
+        // 根据颜色判断模式
+        // #4f9d9a = 青色 = 录音
+        // #dc2626 = 红色 = LLM处理
+        if (color === '#dc2626') {
+          currentMode = 'llm';
+          console.log('Switched to LLM mode');
+        } else {
+          currentMode = 'recording';
+          console.log('Switched to recording mode');
+        }
+        
+        // 立即更新emoji以反映新模式
+        updateEmoji();
+      }).catch(err => {
+        console.warn('Failed to set up event listener:', err);
+      });
+    }
+    
+    // 启动更新
+    startEmojiUpdate();
+    
+    console.log('Single emoji indicator ready');
+  </script>
+</body>
+</html>

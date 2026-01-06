@@ -50,6 +50,12 @@ impl Default for LlmConfig {
     }
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug, Default)]
+pub struct ProxyConfig {
+    pub enabled: bool,
+    pub url: String, // e.g., "http://127.0.0.1:7890" or "socks5://127.0.0.1:1080"
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct AppConfig {
     pub trigger_mouse: bool,
@@ -63,6 +69,8 @@ pub struct AppConfig {
     pub input_device: String, // Empty string means default device
     #[serde(default)]
     pub llm_config: LlmConfig,
+    #[serde(default)]
+    pub proxy: ProxyConfig,
 }
 
 impl Default for AppConfig {
@@ -76,6 +84,7 @@ impl Default for AppConfig {
             model_version: ModelVersion::default(),
             input_device: "".to_string(), // Default device
             llm_config: LlmConfig::default(),
+            proxy: ProxyConfig::default(),
         }
     }
 }

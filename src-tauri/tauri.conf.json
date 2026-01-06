@@ -7,6 +7,7 @@
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://127.0.0.1:1420",
     "beforeBuildCommand": "npm run build",
+    "beforeBundleCommand": "powershell -Command \"Copy-Item -Path 'target\\release\\sherpa-onnx-c-api.dll','target\\release\\onnxruntime.dll','target\\release\\onnxruntime_providers_shared.dll','target\\release\\cargs.dll' -Destination 'binaries\\' -Force\"",
     "frontendDist": "../dist"
   },
   "app": {
@@ -28,6 +29,12 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "resources": {
+      "binaries/sherpa-onnx-c-api.dll": "./",
+      "binaries/onnxruntime.dll": "./",
+      "binaries/onnxruntime_providers_shared.dll": "./",
+      "binaries/cargs.dll": "./"
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

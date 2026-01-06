@@ -1,13 +1,14 @@
 use rdev::{listen, EventType, Key, Button};
 use std::thread;
 use std::sync::mpsc::Sender;
-use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+use std::sync::{Arc, atomic::{AtomicBool, Ordering}, Mutex};
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub enum InputEvent {
     Start,
     Stop,
     Toggle,
+    MouseMove { x: f64, y: f64 },
 }
 
 pub struct InputListener {
@@ -15,6 +16,9 @@ pub struct InputListener {
     pub enable_mouse: Arc<AtomicBool>,
     pub enable_hold: Arc<AtomicBool>,
     pub enable_toggle: Arc<AtomicBool>,
+    pub track_mouse_position: Arc<AtomicBool>,
+    // 存储最新的鼠标位置
+    pub last_mouse_position: Arc<Mutex<(f64, f64)>>,
 }
 
 impl InputListener {
@@ -23,6 +27,16 @@ impl InputListener {
             enable_mouse: Arc::new(AtomicBool::new(true)),
             enable_hold: Arc::new(AtomicBool::new(true)),
             enable_toggle: Arc::new(AtomicBool::new(true)),
+            track_mouse_position: Arc::new(AtomicBool::new(false)),
+            last_mouse_position: Arc::new(Mutex::new((0.0, 0.0))),
+        }
+    }
+    
+    pub fn get_last_mouse_position(&self) -> (f64, f64) {
+        if let Ok(pos) = self.last_mouse_position.lock() {
+            *pos
+        } else {
+            (0.0, 0.0)
         }
     }
 
@@ -30,6 +44,8 @@ impl InputListener {
         let enable_mouse = self.enable_mouse.clone();
         let enable_hold = self.enable_hold.clone();
         let enable_toggle = self.enable_toggle.clone();
+        let track_mouse_position = self.track_mouse_position.clone();
+        let last_mouse_position = self.last_mouse_position.clone();
 
         thread::spawn(move || {
             let mut is_ctrl = false;
@@ -74,7 +90,20 @@ impl InputListener {
                         is_win = false;
                         check_combo(&enable_hold, &mut combo_active, is_ctrl, is_win, &tx);
                     },
-                    
+
+                    // Mouse Position Tracking
+                    EventType::MouseMove { x, y } => {
+                        // 始终更新最新的鼠标位置
+                        if let Ok(mut pos) = last_mouse_position.lock() {
+                            *pos = (x, y);
+                        }
+                        
+                        // 只在需要跟踪时发送事件
+                        if track_mouse_position.load(Ordering::Relaxed) {
+                            tx.send(InputEvent::MouseMove { x, y }).ok();
+                        }
+                    },
+
                     _ => {}
                 }
             }) {

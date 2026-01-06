@@ -27,6 +27,11 @@ export interface LlmConfig {
     custom_prompt: string;
 }
 
+export interface ProxyConfig {
+    enabled: boolean;
+    url: string;
+}
+
 export interface AppConfig {
     trigger_mouse: boolean;
     trigger_hold: boolean;
@@ -36,6 +41,7 @@ export interface AppConfig {
     model_version: ModelVersion;
     input_device: string;
     llm_config: LlmConfig;
+    proxy: ProxyConfig;
 }
 
 export interface HistoryItem {
@@ -57,6 +63,8 @@ export const api = {
     getModelVersionsStatus: () => invoke<ModelVersionsStatus>("get_model_versions_status"),
     downloadModelForVersion: (version: ModelVersion) => invoke("download_model_for_version", { version }),
     switchModelVersion: (version: ModelVersion) => invoke("switch_model_version", { version }),
+    cancelDownload: () => invoke("cancel_download"),
+    importModel: (filePath: string, version: ModelVersion) => invoke("import_model", { filePath, version }),
     // Audio device APIs
     getInputDevices: () => invoke<AudioDevice[]>("get_input_devices"),
     getCurrentInputDevice: () => invoke<string>("get_current_input_device"),
@@ -64,7 +72,7 @@ export const api = {
     startAudioTest: () => invoke("start_audio_test"),
     stopAudioTest: () => invoke("stop_audio_test"),
     // LLM APIs
-    testLlmConnection: (config: LlmConfig) => invoke<string>("test_llm_connection", { config }),
+    testLlmConnection: (config: LlmConfig, proxy: ProxyConfig) => invoke<string>("test_llm_connection", { config, proxy }),
     getDefaultLlmPrompt: () => invoke<string>("get_default_llm_prompt"),
 };
 
@@ -74,7 +82,13 @@ export const events = {
     onDownloadProgress: (callback: (payload: { current: number, total: number }) => void) => listen("download_progress", (e) => callback(e.payload as any)),
     onDownloadComplete: (callback: () => void) => listen("download_complete", callback),
     onDownloadError: (callback: (error: string) => void) => listen("download_error", (e) => callback(e.payload as string)),
+    onDownloadCancelled: (callback: () => void) => listen("download_cancelled", callback),
+    onImportStarted: (callback: () => void) => listen("import_started", callback),
+    onImportComplete: (callback: () => void) => listen("import_complete", callback),
+    onImportError: (callback: (error: string) => void) => listen("import_error", (e) => callback(e.payload as string)),
     onModelLoaded: (callback: () => void) => listen("model_loaded", callback),
     onAudioLevel: (callback: (level: number) => void) => listen<number>("audio_level", (e) => callback(e.payload)),
+    onLlmProcessing: (callback: (isProcessing: boolean) => void) => listen<boolean>("llm_processing", (e) => callback(e.payload)),
+    onMousePosition: (callback: (pos: { x: number; y: number }) => void) => listen<{ x: number; y: number }>("mouse_position", (e) => callback(e.payload)),
 };
 
